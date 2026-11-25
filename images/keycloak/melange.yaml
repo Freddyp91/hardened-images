@@ -33,7 +33,12 @@ pipeline:
 
   - runs: |
       mkdir -p ${{targets.destdir}}/opt/keycloak ${{targets.destdir}}/usr/bin
-      cp -a . ${{targets.destdir}}/opt/keycloak/
+      # The workspace also holds melange-out/ (the destdir) and the downloaded
+      # tarball, so copy the distribution entries one by one.
+      for f in *; do
+        case "$f" in melange-out|*.tar.gz) continue ;; esac
+        cp -a "$f" ${{targets.destdir}}/opt/keycloak/
+      done
       # Windows launchers are not needed in a Linux image.
       rm -f ${{targets.destdir}}/opt/keycloak/bin/*.bat
       mkdir -p ${{targets.destdir}}/opt/keycloak/data
