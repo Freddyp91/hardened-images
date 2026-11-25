@@ -104,6 +104,8 @@ jobs:
         run: |
           arch='${{ matrix.arch }}'
           mkdir -p /tmp/melange-src /tmp/melange-cache
+          # The build runs as an unprivileged user inside melange's sandbox.
+          chmod -R a+rwX /tmp/melange-cache
           docker run --rm -v "$PWD":/work -w /work "$MELANGE_IMAGE" keygen "melange-$arch.rsa"
           docker run --rm --privileged \
             -v "$PWD":/work -v /tmp/melange-src:/src -v /tmp/melange-cache:/cache -w /work \

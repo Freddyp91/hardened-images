@@ -53,6 +53,7 @@ pipeline:
       # /var/cache/melange is persisted between CI runs (Maven repository cache).
       mvn -B -ntp \
         -Dmaven.repo.local=/var/cache/melange/m2 \
+        -Dmaven.build.cache.enabled=false \
         -DskipTests -DskipExamples -DskipTestsuite \
         -pl quarkus/deployment,quarkus/dist -am \
         ${{vars.maven-overrides}} \
