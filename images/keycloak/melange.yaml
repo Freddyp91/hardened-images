@@ -3,7 +3,7 @@
 # (the "Watch upstream" workflow). Bump epoch to force a package rebuild.
 package:
   name: keycloak
-  version: 0.0.0
+  version: 26.8.2
   epoch: 0
   description: Open Source Identity and Access Management
   copyright:
@@ -28,7 +28,7 @@ pipeline:
   - uses: fetch
     with:
       uri: https://github.com/keycloak/keycloak/releases/download/${{package.version}}/keycloak-${{package.version}}.tar.gz
-      expected-sha256: 0000000000000000000000000000000000000000000000000000000000000000
+      expected-sha256: dd124787283918bc597628887168333465ee2a811a389e0003569e52be7e487f
       strip-components: 1
 
   - runs: |
