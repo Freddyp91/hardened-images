@@ -112,6 +112,8 @@ pipeline:
       rm -f ${{targets.destdir}}/opt/keycloak/bin/*.bat
       mkdir -p ${{targets.destdir}}/opt/keycloak/data
       ln -s /opt/keycloak/bin/kc.sh ${{targets.destdir}}/usr/bin/kc.sh
+      # Some archive entries come out world-writable; nothing in the package should be.
+      chmod -R go-w ${{targets.destdir}}/opt/keycloak
 
 # Package tests run with `melange test` in CI before any image is assembled.
 test:
