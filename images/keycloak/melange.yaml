@@ -44,12 +44,26 @@ pipeline:
       mkdir -p ${{targets.destdir}}/opt/keycloak/data
       ln -s /opt/keycloak/bin/kc.sh ${{targets.destdir}}/usr/bin/kc.sh
 
+# Package tests run with `melange test` in CI before any image is assembled.
 test:
   environment:
     contents:
       packages:
         - busybox
   pipeline:
-    - runs: |
+    - name: Files are installed
+      runs: |
         test -x /opt/keycloak/bin/kc.sh
         test -f /opt/keycloak/version.txt
+        test -d /opt/keycloak/lib
+        grep -q "${{package.version}}" /opt/keycloak/version.txt
+    - name: Launcher interpreter and JVM resolve
+      runs: |
+        head -n1 /opt/keycloak/bin/kc.sh
+        interp=$(head -n1 /opt/keycloak/bin/kc.sh | sed 's/^#! *//; s/ .*//')
+        test -x "$interp"
+        java -version
+    - name: kc.sh runs
+      runs: |
+        /opt/keycloak/bin/kc.sh --version | tee /tmp/kc-version
+        grep -q "${{package.version}}" /tmp/kc-version

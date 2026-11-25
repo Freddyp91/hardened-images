@@ -46,6 +46,10 @@ jobs:
               echo "::notice::Skipping $name: version not pinned yet. Run the 'Watch upstream' workflow."
               continue
             fi
+            if [ ! -x "$dir/smoke-test.sh" ] || ! grep -q '^test:' "$dir/melange.yaml"; then
+              echo "::error::$name must have an executable smoke-test.sh and a test: section in melange.yaml"
+              exit 1
+            fi
             names+=("$name")
           done
           echo "matrix=$(printf '%s\n' "${names[@]}" | jq -R . | jq -cs 'map(select(length>0))')" >> "$GITHUB_OUTPUT"
@@ -92,7 +96,35 @@ jobs:
             --signing-key melange.rsa --out-dir packages
           sudo chown -R "$(id -u):$(id -g)" .
 
-      - name: Build and publish image with apko
+      - name: Test package with melange
+        working-directory: images/${{ matrix.image }}
+        run: |
+          docker run --rm --privileged -v "$PWD":/work -w /work "$MELANGE_IMAGE" \
+            test melange.yaml --arch x86_64 \
+            --repository-append /work/packages --keyring-append /work/melange.rsa.pub
+          sudo chown -R "$(id -u):$(id -g)" .
+
+      - name: Build image locally with apko
+        working-directory: images/${{ matrix.image }}
+        run: |
+          docker run --rm -v "$PWD":/work -w /work "$APKO_IMAGE" \
+            build apko.yaml smoke-test:local image.tar --arch x86_64
+          sudo chown -R "$(id -u):$(id -g)" .
+          docker load < image.tar
+          docker tag smoke-test:local-amd64 smoke-test:local 2>/dev/null || true
+          docker image ls smoke-test
+
+      - name: Smoke test image
+        run: ./images/${{ matrix.image }}/smoke-test.sh smoke-test:local
+
+      - name: Show image contents on failure
+        if: failure()
+        run: |
+          cid=$(docker create smoke-test:local) || exit 0
+          docker export "$cid" | tar -tv | grep -E ' (opt/keycloak/bin|bin/bash|usr/bin/bash|usr/lib/jvm)' | head -50 || true
+          docker inspect smoke-test:local --format '{{json .Config}}' || true
+
+      - name: Publish image with apko
         id: apko
         working-directory: images/${{ matrix.image }}
         run: |

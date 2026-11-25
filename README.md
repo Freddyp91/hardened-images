@@ -32,7 +32,14 @@ cosign verify ghcr.io/freddyp91/hardened-images/keycloak:latest \
 
 ## Adding an image
 
-Create `images/<name>/` with `image.json` (upstream metadata), `melange.yaml` (version `0.0.0`, zero sha) and `apko.yaml`, then run **Watch upstream** to pin the first version.
+Create `images/<name>/` with `image.json` (upstream metadata), `melange.yaml` (version `0.0.0`, zero sha), `apko.yaml`, and `smoke-test.sh`, then run **Watch upstream** to pin the first version.
+
+Every image must have tests, and the build refuses images without them:
+
+- a `test:` section in `melange.yaml`, run with `melange test` against the built package
+- an executable `smoke-test.sh` that runs the real image and checks that it works (Keycloak: boots, reports healthy, serves OIDC, accepts admin login, runs as non-root)
+
+Images are only published after both pass.
 
 ## One-time setup
 
