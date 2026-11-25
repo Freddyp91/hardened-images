@@ -34,7 +34,6 @@ environment:
       - ca-certificates-bundle
       - git
       - libstdc++   # node (used by the admin console build) needs it
-      - openssl     # Kiota (.NET) needs libssl
       - maven
       - openjdk-21
       - openjdk-21-default-jdk
@@ -48,6 +47,9 @@ environment:
     WIREIT_LOGGER: simple
     # Kiota (.NET, generates the admin client) needs ICU unless globalization is invariant.
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
+    # ts-node hides TypeScript diagnostics behind an opaque error on Node 24; transpile
+    # only, and let the tsc step that follows do the type check with readable output.
+    TS_NODE_TRANSPILE_ONLY: "true"
 
 pipeline:
   - uses: git-checkout
