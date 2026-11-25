@@ -9,9 +9,9 @@
     "image": "quay.io/keycloak/keycloak:26.8.2"
   },
   "latest": {
-    "builtAt": "2026-11-25T01:09:37.178Z",
+    "builtAt": "2026-11-25T02:00:19.622Z",
     "version": "26.8.2",
-    "digest": "sha256:70c7f23142a2bc2bd4bcf660ce9d80cb2802ba66c587e2ed98b04b7d9460930e",
+    "digest": "sha256:33b1e4aeeb832cd3c41720495c1948c85cf1f71d59677c1f694d0749ee9a94cb",
     "vulns": {
       "critical": 0,
       "high": 0,
@@ -28,11 +28,33 @@
       "unknown": 0,
       "total": 69
     },
-    "runUrl": "https://github.com/Freddyp91/hardened-images/actions/runs/45523312680",
+    "runUrl": "https://github.com/Freddyp91/hardened-images/actions/runs/45529414073",
     "topVulns": [],
-    "packageCount": 52
+    "packageCount": 55
   },
   "history": [
+    {
+      "builtAt": "2026-11-25T02:00:19.622Z",
+      "version": "26.8.2",
+      "digest": "sha256:33b1e4aeeb832cd3c41720495c1948c85cf1f71d59677c1f694d0749ee9a94cb",
+      "vulns": {
+        "critical": 0,
+        "high": 0,
+        "medium": 0,
+        "low": 0,
+        "unknown": 0,
+        "total": 0
+      },
+      "upstreamVulns": {
+        "critical": 0,
+        "high": 6,
+        "medium": 30,
+        "low": 33,
+        "unknown": 0,
+        "total": 69
+      },
+      "runUrl": "https://github.com/Freddyp91/hardened-images/actions/runs/45529414073"
+    },
     {
       "builtAt": "2026-11-25T01:09:37.178Z",
       "version": "26.8.2",
