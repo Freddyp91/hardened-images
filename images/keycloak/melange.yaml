@@ -45,6 +45,8 @@ environment:
     CI: "true"
     WIREIT_CACHE: none
     WIREIT_LOGGER: simple
+    # Kiota (.NET, generates the admin client) needs ICU unless globalization is invariant.
+    DOTNET_SYSTEM_GLOBALIZATION_INVARIANT: "1"
 
 pipeline:
   - uses: git-checkout
