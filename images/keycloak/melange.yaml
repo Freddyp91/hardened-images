@@ -10,7 +10,9 @@ package:
     - license: Apache-2.0
   dependencies:
     runtime:
+      # kc.sh is a /bin/sh script that uses dirname, readlink, grep, etc.
       - bash
+      - busybox
       - openjdk-21-jre
       - openjdk-21-default-jvm
 
