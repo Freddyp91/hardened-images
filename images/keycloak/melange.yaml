@@ -17,10 +17,28 @@ package:
       - openjdk-21-default-jvm
 
 vars:
-  # Extra -D flags to override dependency versions with patched releases, e.g.
-  # "-Dnetty.version=4.1.200.Final". Every override must keep the melange and
-  # smoke tests green.
-  maven-overrides: ""
+  # CVE remediation. Each override must keep the melange and smoke tests green, and
+  # should be dropped once upstream ships the fix.
+  #
+  # Extra -D flags for versions Keycloak exposes as Maven properties.
+  maven-overrides: >-
+    -Dmariadb-jdbc.version=3.5.11
+  # Managed dependencies inserted at the top of the root pom's dependencyManagement,
+  # so they win over the Quarkus BOM.
+  managed-dependency-overrides: |
+    <!-- hardened-images overrides -->
+    <dependency>
+      <groupId>com.google.guava</groupId>
+      <artifactId>guava</artifactId>
+      <version>33.7.2-jre</version>
+    </dependency>
+    <dependency>
+      <groupId>io.opentelemetry</groupId>
+      <artifactId>opentelemetry-bom</artifactId>
+      <version>1.67.0</version>
+      <type>pom</type>
+      <scope>import</scope>
+    </dependency>
 
 environment:
   contents:
@@ -58,6 +76,20 @@ pipeline:
       repository: https://github.com/keycloak/keycloak
       tag: ${{package.version}}
       expected-commit: e514445f9dcdabc5bdcf67cab56c1e49655de067
+
+  - name: Apply dependency overrides
+    runs: |
+      cat > /tmp/overrides.xml <<'OVERRIDES'
+      ${{vars.managed-dependency-overrides}}
+      OVERRIDES
+      # Insert right after the first <dependencies> inside <dependencyManagement>.
+      awk 'FNR==NR { buf = buf $0 "\n"; next }
+           /<dependencyManagement>/ { dm = 1 }
+           { print }
+           dm && !done && /<dependencies>/ { printf "%s", buf; done = 1 }' /tmp/overrides.xml pom.xml > pom.xml.new
+      mv pom.xml.new pom.xml
+      grep -q 'hardened-images overrides' pom.xml
+      sed -n '/<dependencyManagement>/,/hardened-images overrides/p' pom.xml | tail -3
 
   - name: Build distribution with Maven
     runs: |
@@ -104,6 +136,13 @@ test:
         interp=$(head -n1 /opt/keycloak/bin/kc.sh | sed 's/^#! *//; s/ .*//')
         test -x "$interp"
         java -version
+    - name: CVE overrides shipped
+      runs: |
+        cd /opt/keycloak/lib/lib/main
+        ls | grep -E 'guava|mariadb-java-client|opentelemetry-api-[0-9]'
+        ls | grep -q 'com.google.guava.guava-33.7.2-jre.jar'
+        ls | grep -q 'org.mariadb.jdbc.mariadb-java-client-3.5.11.jar'
+        ls | grep -q 'io.opentelemetry.opentelemetry-api-1.67.0.jar'
     - name: kc.sh runs
       runs: |
         /opt/keycloak/bin/kc.sh --version | tee /tmp/kc-version
