@@ -39,6 +39,8 @@ environment:
   JAVA_HOME: /usr/lib/jvm/default-jvm
   PATH: /usr/lib/jvm/default-jvm/bin:/opt/keycloak/bin:/usr/sbin:/usr/bin:/sbin:/bin
   LANG: en_US.UTF-8
+  # Dev mode binds to localhost by default, which makes `docker run -p 8080:8080` unreachable.
+  KC_HTTP_HOST: 0.0.0.0
 
 entrypoint:
   command: /opt/keycloak/bin/kc.sh
