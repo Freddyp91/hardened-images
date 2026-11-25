@@ -18,21 +18,26 @@ function load(path) {
   }
 }
 
-function summarize(report) {
-  if (!report) return null;
+function summarize(reports) {
+  reports = (Array.isArray(reports) ? reports : [reports]).filter(Boolean);
+  if (!reports.length) return null;
+  const results = reports.flatMap((r) => r.Results ?? []);
   const seen = new Map();
-  for (const result of report.Results ?? []) {
+  for (const result of results) {
     for (const v of result.Vulnerabilities ?? []) {
       const key = `${v.VulnerabilityID}|${v.PkgName}`;
-      if (!seen.has(key)) seen.set(key, v);
+      if (!seen.has(key)) seen.set(key, { ...v, Class: result.Class, Target: result.Target });
     }
   }
   const counts = Object.fromEntries(SEVERITIES.map((s) => [s.toLowerCase(), 0]));
   for (const v of seen.values()) counts[(v.Severity ?? 'UNKNOWN').toLowerCase()] = (counts[(v.Severity ?? 'UNKNOWN').toLowerCase()] ?? 0) + 1;
   counts.total = seen.size;
+  counts.fixable = [...seen.values()].filter((v) => v.FixedVersion).length;
+  counts.os = [...seen.values()].filter((v) => v.Class === 'os-pkgs').length;
+  counts.libraries = counts.total - counts.os;
   const top = [...seen.values()]
     .sort((a, b) => SEVERITIES.indexOf(a.Severity) - SEVERITIES.indexOf(b.Severity))
-    .slice(0, 50)
+    .slice(0, 200)
     .map((v) => ({
       id: v.VulnerabilityID,
       pkg: v.PkgName,
@@ -40,13 +45,14 @@ function summarize(report) {
       fixed: v.FixedVersion ?? null,
       severity: v.Severity,
       title: v.Title ?? null,
+      kind: v.Class === 'os-pkgs' ? 'os' : 'library',
     }));
   const packages = new Set();
-  for (const result of report.Results ?? []) for (const p of result.Packages ?? []) packages.add(`${p.Name}@${p.Version}`);
+  for (const result of results) for (const p of result.Packages ?? []) packages.add(`${p.Name}@${p.Version}`);
   return { counts, top, packageCount: packages.size || null };
 }
 
-const ours = summarize(load(args.ours));
+const ours = summarize((args.ours ?? '').split(',').map(load));
 if (!ours) throw new Error(`could not read Trivy report ${args.ours}`);
 const upstream = summarize(load(args.upstream));
 

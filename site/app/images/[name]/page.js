@@ -106,7 +106,7 @@ export default async function ImagePage({ params }) {
               ) : (
                 <div className="table-box flat">
                   <table>
-                    <thead><tr><th>ID</th><th>Package</th><th>Severity</th><th>Installed</th><th>Fixed in</th></tr></thead>
+                    <thead><tr><th>ID</th><th>Package</th><th>Type</th><th>Severity</th><th>Installed</th><th>Fixed in</th></tr></thead>
                     <tbody>
                       {findings.map((v) => (
                         <tr key={`${v.id}-${v.pkg}`}>
@@ -130,8 +130,9 @@ export default async function ImagePage({ params }) {
             </div>
             <h3>Verify the signature</h3>
             <CodeBlock>{`cosign verify ${digestRef} \\\n  --certificate-identity ${identity} \\\n  --certificate-oidc-issuer https://token.actions.githubusercontent.com`}</CodeBlock>
-            <h3>Download the SBOM</h3>
-            <CodeBlock>{`cosign verify-attestation --type spdxjson ${digestRef} \\\n  --certificate-identity ${identity} \\\n  --certificate-oidc-issuer https://token.actions.githubusercontent.com \\\n  | jq -r .payload | base64 -d | jq .predicate > sbom.spdx.json`}</CodeBlock>
+            <h3>Download the SBOMs</h3>
+      <p className="muted">Two attestations: SPDX for OS packages, CycloneDX for bundled libraries.</p>
+            <CodeBlock>{`cosign verify-attestation --type spdxjson ${digestRef} \\\n  --certificate-identity ${identity} \\\n  --certificate-oidc-issuer https://token.actions.githubusercontent.com \\\n  | jq -r .payload | base64 -d | jq .predicate > sbom.spdx.json\n\n# bundled libraries (JARs etc.): same command with --type cyclonedx`}</CodeBlock>
           </section>
 
           <section id="history">

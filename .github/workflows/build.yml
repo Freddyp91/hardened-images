@@ -3,9 +3,10 @@ name: Build images
 on:
   push:
     branches: [main]
-    paths: ['images/**', '.github/workflows/build.yml']
+    paths: ['images/**', 'scripts/**', '.github/workflows/build.yml']
   schedule:
     # Rebuild every 6 hours to pick up patched Wolfi packages (glibc, openjdk, ...).
+    # Application packages are rebuilt from source whenever their melange.yaml changes.
     - cron: '17 */6 * * *'
   workflow_dispatch:
     inputs:
@@ -13,6 +14,10 @@ on:
         description: 'Space separated image names to build (blank = all)'
         required: false
         default: ''
+      force-package-rebuild:
+        description: 'Ignore the package cache and rebuild from source'
+        type: boolean
+        default: false
 
 concurrency:
   group: build-images
@@ -30,7 +35,7 @@ jobs:
   plan:
     runs-on: ubuntu-latest
     outputs:
-      matrix: ${{ steps.list.outputs.matrix }}
+      images: ${{ steps.list.outputs.images }}
     steps:
       - uses: actions/checkout@v4
       - id: list
@@ -41,22 +46,108 @@ jobs:
           for dir in images/*/; do
             name=$(basename "$dir")
             if [ -n "$REQUESTED" ] && ! grep -qw "$name" <<<"$REQUESTED"; then continue; fi
+            ./scripts/check-image-policy.sh "$dir"
             version=$(awk '/^  version:/ {print $2; exit}' "$dir/melange.yaml")
             if [ "$version" = "0.0.0" ]; then
               echo "::notice::Skipping $name: version not pinned yet. Run the 'Watch upstream' workflow."
               continue
             fi
-            if [ ! -x "$dir/smoke-test.sh" ] || ! grep -q '^test:' "$dir/melange.yaml"; then
-              echo "::error::$name must have an executable smoke-test.sh and a test: section in melange.yaml"
-              exit 1
-            fi
             names+=("$name")
           done
-          echo "matrix=$(printf '%s\n' "${names[@]}" | jq -R . | jq -cs 'map(select(length>0))')" >> "$GITHUB_OUTPUT"
+          echo "images=$(printf '%s\n' "${names[@]}" | jq -R . | jq -cs 'map(select(length>0))')" >> "$GITHUB_OUTPUT"
 
-  build:
+  # Build each application package from source on a native runner per architecture,
+  # then run the melange package tests on that architecture.
+  package:
     needs: plan
-    if: needs.plan.outputs.matrix != '[]'
+    if: needs.plan.outputs.images != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJson(needs.plan.outputs.images) }}
+        arch: [x86_64, aarch64]
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: images/${{ matrix.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # The built package only changes when its melange.yaml does, so reuse it across
+      # scheduled rebuilds (the image still picks up fresh Wolfi packages every time).
+      - name: Restore built package
+        id: pkgcache
+        if: github.event.inputs.force-package-rebuild != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            images/${{ matrix.image }}/packages
+            images/${{ matrix.image }}/melange-${{ matrix.arch }}.rsa.pub
+          key: pkg-${{ matrix.image }}-${{ matrix.arch }}-${{ hashFiles(format('images/{0}/melange.yaml', matrix.image)) }}
+
+      - name: Restore Maven/build cache
+        if: steps.pkgcache.outputs.cache-hit != 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/melange-cache
+          key: buildcache-${{ matrix.image }}-${{ matrix.arch }}-${{ hashFiles(format('images/{0}/melange.yaml', matrix.image)) }}
+          restore-keys: buildcache-${{ matrix.image }}-${{ matrix.arch }}-
+
+      - name: Build package from source with melange
+        if: steps.pkgcache.outputs.cache-hit != 'true'
+        run: |
+          arch='${{ matrix.arch }}'
+          mkdir -p /tmp/melange-src /tmp/melange-cache
+          docker run --rm -v "$PWD":/work -w /work "$MELANGE_IMAGE" keygen "melange-$arch.rsa"
+          docker run --rm --privileged \
+            -v "$PWD":/work -v /tmp/melange-src:/src -v /tmp/melange-cache:/cache -w /work \
+            "$MELANGE_IMAGE" build melange.yaml --arch "$arch" \
+            --source-dir /src --cache-dir /cache \
+            --signing-key "melange-$arch.rsa" --out-dir packages
+          sudo chown -R "$(id -u):$(id -g)" . /tmp/melange-cache
+          rm -f "melange-$arch.rsa"
+
+      - name: Test package with melange
+        run: |
+          arch='${{ matrix.arch }}'
+          mkdir -p /tmp/melange-src
+          docker run --rm --privileged -v "$PWD":/work -v /tmp/melange-src:/src -w /work "$MELANGE_IMAGE" \
+            test melange.yaml --arch "$arch" --source-dir /src \
+            --repository-append /work/packages --keyring-append "/work/melange-$arch.rsa.pub"
+          sudo chown -R "$(id -u):$(id -g)" .
+
+      - name: Save Maven/build cache
+        if: steps.pkgcache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/melange-cache
+          key: buildcache-${{ matrix.image }}-${{ matrix.arch }}-${{ hashFiles(format('images/{0}/melange.yaml', matrix.image)) }}
+
+      - name: Save built package
+        if: steps.pkgcache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            images/${{ matrix.image }}/packages
+            images/${{ matrix.image }}/melange-${{ matrix.arch }}.rsa.pub
+          key: pkg-${{ matrix.image }}-${{ matrix.arch }}-${{ hashFiles(format('images/{0}/melange.yaml', matrix.image)) }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkg-${{ matrix.image }}-${{ matrix.arch }}
+          path: |
+            images/${{ matrix.image }}/packages/${{ matrix.arch }}
+            images/${{ matrix.image }}/melange-${{ matrix.arch }}.rsa.pub
+          retention-days: 3
+
+  image:
+    needs: [plan, package]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -66,11 +157,27 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: ${{ fromJson(needs.plan.outputs.matrix) }}
+        image: ${{ fromJson(needs.plan.outputs.images) }}
     steps:
       - uses: actions/checkout@v4
 
-      - uses: docker/setup-qemu-action@v3
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: pkg-${{ matrix.image }}-*
+          path: images/${{ matrix.image }}
+          merge-multiple: true
+
+      - name: Arrange package repository
+        working-directory: images/${{ matrix.image }}
+        run: |
+          # Artifacts keep paths relative to their common root, so normalise to packages/<arch>.
+          mkdir -p packages
+          for arch in x86_64 aarch64; do
+            [ -d "$arch" ] && mv "$arch" packages/
+            [ -d "packages/$arch" ] && [ -f "melange-$arch.rsa.pub" ] || { echo "::error::missing $arch package"; exit 1; }
+          done
+          find packages -name '*.apk' -o -name APKINDEX.tar.gz
 
       - name: Resolve names
         id: names
@@ -78,37 +185,12 @@ jobs:
           owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')
           repo=$(echo '${{ github.event.repository.name }}' | tr '[:upper:]' '[:lower:]')
           version=$(awk '/^  version:/ {print $2; exit}' images/${{ matrix.image }}/melange.yaml)
-          epoch=$(awk '/^  epoch:/ {print $2; exit}' images/${{ matrix.image }}/melange.yaml)
           echo "repo=ghcr.io/$owner/$repo/${{ matrix.image }}" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "epoch=$epoch" >> "$GITHUB_OUTPUT"
           echo "stamp=$(date -u +%Y%m%d%H%M)" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
         run: echo '${{ secrets.GITHUB_TOKEN }}' | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
-
-      - name: Build package with melange
-        working-directory: images/${{ matrix.image }}
-        run: |
-          docker run --rm -v "$PWD":/work -w /work "$MELANGE_IMAGE" keygen melange.rsa
-          # Sources come from the fetch step, so each arch gets its own empty source dir.
-          # Arches build one at a time: parallel builds race on temp files in the source dir.
-          for arch in x86_64 aarch64; do
-            mkdir -p "/tmp/melange-src-$arch"
-            docker run --rm --privileged -v "$PWD":/work -v "/tmp/melange-src-$arch":/src -w /work "$MELANGE_IMAGE" \
-              build melange.yaml --arch "$arch" --source-dir /src \
-              --signing-key melange.rsa --out-dir packages
-          done
-          sudo chown -R "$(id -u):$(id -g)" .
-
-      - name: Test package with melange
-        working-directory: images/${{ matrix.image }}
-        run: |
-          mkdir -p /tmp/melange-src
-          docker run --rm --privileged -v "$PWD":/work -v /tmp/melange-src:/src -w /work "$MELANGE_IMAGE" \
-            test melange.yaml --arch x86_64 --source-dir /src \
-            --repository-append /work/packages --keyring-append /work/melange.rsa.pub
-          sudo chown -R "$(id -u):$(id -g)" .
 
       - name: Build image locally with apko
         working-directory: images/${{ matrix.image }}
@@ -127,7 +209,7 @@ jobs:
         if: failure()
         run: |
           cid=$(docker create smoke-test:local) || exit 0
-          docker export "$cid" | tar -tv | grep -E ' (opt/keycloak/bin|bin/bash|usr/bin/bash|usr/lib/jvm)' | head -50 || true
+          docker export "$cid" | tar -tv | head -200 || true
           docker inspect smoke-test:local --format '{{json .Config}}' || true
 
       - name: Publish image with apko
@@ -148,15 +230,46 @@ jobs:
           echo "digest=${digest_ref##*@}" >> "$GITHUB_OUTPUT"
           sudo chown -R "$(id -u):$(id -g)" .
 
+      # Trivy skips language files (JARs, node_modules, Go binaries) owned by an OS
+      # package, and our application is installed as an apk. Scan the image for OS
+      # packages, then scan its filesystem with the apk database removed so every
+      # bundled library is counted too.
+      - name: Scan with Trivy (OS packages and bundled libraries)
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p scan rootfs
+          upstream_image=$(jq -r '.upstream.image' images/${{ matrix.image }}/image.json)
+          upstream_tag=$(jq -r '.upstream.imageTagTemplate' images/${{ matrix.image }}/image.json | sed "s/{version}/${{ steps.names.outputs.version }}/g")
+          echo "UPSTREAM_REF=$upstream_image:$upstream_tag" >> "$GITHUB_ENV"
+
+          docker run --rm -v "$PWD/scan":/scan -e TRIVY_USERNAME -e TRIVY_PASSWORD "$TRIVY_IMAGE" \
+            image --quiet --format json --list-all-pkgs --output /scan/ours-os.json '${{ steps.apko.outputs.ref }}'
+
+          cid=$(docker create smoke-test:local)
+          docker export "$cid" | sudo tar -x -C rootfs
+          sudo rm -rf rootfs/lib/apk/db rootfs/usr/lib/apk/db
+          docker run --rm -v "$PWD/scan":/scan -v "$PWD/rootfs":/rootfs:ro "$TRIVY_IMAGE" \
+            rootfs --quiet --pkg-types library --format json --list-all-pkgs --output /scan/ours-libs.json /rootfs
+          docker run --rm -v "$PWD/scan":/scan -v "$PWD/rootfs":/rootfs:ro "$TRIVY_IMAGE" \
+            rootfs --quiet --pkg-types library --format cyclonedx --output /scan/libraries.cdx.json /rootfs
+
+          # Upstream comparison is best effort: the tag may not exist yet.
+          docker run --rm -v "$PWD/scan":/scan "$TRIVY_IMAGE" \
+            image --quiet --format json --output /scan/upstream.json "$upstream_image:$upstream_tag" || echo "::warning::Upstream scan failed"
+
       - uses: sigstore/cosign-installer@v3
 
-      - name: Sign image and attach SBOM attestation
+      - name: Sign image and attach SBOM attestations
         working-directory: images/${{ matrix.image }}
         run: |
           ref='${{ steps.apko.outputs.ref }}'
           cosign sign --yes "$ref"
+          # OS packages (apko SPDX) and bundled libraries (Trivy CycloneDX).
           sbom=$(ls sbom/*.spdx.json | grep -v index | head -n1)
           cosign attest --yes --type spdxjson --predicate "$sbom" "$ref"
+          cosign attest --yes --type cyclonedx --predicate "$GITHUB_WORKSPACE/scan/libraries.cdx.json" "$ref"
 
       - name: Generate build provenance
         uses: actions/attest-build-provenance@v2
@@ -165,21 +278,6 @@ jobs:
           subject-digest: ${{ steps.apko.outputs.digest }}
           push-to-registry: true
 
-      - name: Scan with Trivy
-        env:
-          TRIVY_USERNAME: ${{ github.actor }}
-          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          mkdir -p scan
-          upstream_image=$(jq -r '.upstream.image' images/${{ matrix.image }}/image.json)
-          upstream_tag=$(jq -r '.upstream.imageTagTemplate' images/${{ matrix.image }}/image.json | sed "s/{version}/${{ steps.names.outputs.version }}/g")
-          echo "UPSTREAM_REF=$upstream_image:$upstream_tag" >> "$GITHUB_ENV"
-          docker run --rm -v "$PWD/scan":/scan -e TRIVY_USERNAME -e TRIVY_PASSWORD "$TRIVY_IMAGE" \
-            image --quiet --format json --list-all-pkgs --output /scan/ours.json '${{ steps.apko.outputs.ref }}'
-          # Upstream comparison is best effort: the tag may not exist yet.
-          docker run --rm -v "$PWD/scan":/scan "$TRIVY_IMAGE" \
-            image --quiet --format json --output /scan/upstream.json "$upstream_image:$upstream_tag" || echo "::warning::Upstream scan failed"
-
       - name: Summarize scan
         run: |
           node scripts/summarize-scan.mjs \
@@ -187,7 +285,7 @@ jobs:
             --version '${{ steps.names.outputs.version }}' \
             --image '${{ steps.names.outputs.repo }}' \
             --digest '${{ steps.apko.outputs.digest }}' \
-            --ours scan/ours.json \
+            --ours scan/ours-os.json,scan/ours-libs.json \
             --upstream scan/upstream.json \
             --upstream-image "$UPSTREAM_REF" \
             --out scan/summary-${{ matrix.image }}.json
@@ -200,11 +298,14 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: sbom-${{ matrix.image }}
-          path: images/${{ matrix.image }}/sbom/
+          path: |
+            images/${{ matrix.image }}/sbom/
+            scan/libraries.cdx.json
+            scan/ours-libs.json
 
   record:
-    needs: build
-    if: always() && needs.build.result != 'skipped'
+    needs: image
+    if: always() && needs.image.result != 'skipped'
     runs-on: ubuntu-latest
     permissions:
       contents: write

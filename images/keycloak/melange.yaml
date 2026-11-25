@@ -1,5 +1,5 @@
-# Keycloak packaged from the official upstream release tarball.
-# version and expected-sha256 are maintained by scripts/check-upstream.mjs
+# Keycloak built from source (git tag) with Maven. No upstream binaries are used.
+# package.version and expected-commit are maintained by scripts/check-upstream.mjs
 # (the "Watch upstream" workflow). Bump epoch to force a package rebuild.
 package:
   name: keycloak
@@ -16,6 +16,12 @@ package:
       - openjdk-21-jre
       - openjdk-21-default-jvm
 
+vars:
+  # Extra -D flags to override dependency versions with patched releases, e.g.
+  # "-Dnetty.version=4.1.200.Final". Every override must keep the melange and
+  # smoke tests green.
+  maven-overrides: ""
+
 environment:
   contents:
     keyring:
@@ -23,24 +29,41 @@ environment:
     repositories:
       - https://packages.wolfi.dev/os
     packages:
+      - bash
       - busybox
       - ca-certificates-bundle
+      - git
+      - maven
+      - openjdk-21
+      - openjdk-21-default-jdk
+  environment:
+    JAVA_HOME: /usr/lib/jvm/java-21-openjdk
+    LANG: en_US.UTF-8
+    MAVEN_OPTS: -Xmx3g
 
 pipeline:
-  - uses: fetch
+  - uses: git-checkout
     with:
-      uri: https://github.com/keycloak/keycloak/releases/download/${{package.version}}/keycloak-${{package.version}}.tar.gz
-      expected-sha256: dd124787283918bc597628887168333465ee2a811a389e0003569e52be7e487f
-      strip-components: 1
+      repository: https://github.com/keycloak/keycloak
+      tag: ${{package.version}}
+      expected-commit: e514445f9dcdabc5bdcf67cab56c1e49655de067
 
-  - runs: |
+  - name: Build distribution with Maven
+    runs: |
+      # /var/cache/melange is persisted between CI runs (Maven repository cache).
+      mvn -B -ntp \
+        -Dmaven.repo.local=/var/cache/melange/m2 \
+        -DskipTests -DskipExamples -DskipTestsuite \
+        -pl quarkus/deployment,quarkus/dist -am \
+        ${{vars.maven-overrides}} \
+        install
+
+  - name: Install
+    runs: |
+      dist=quarkus/dist/target/keycloak-${{package.version}}.tar.gz
+      test -f "$dist"
       mkdir -p ${{targets.destdir}}/opt/keycloak ${{targets.destdir}}/usr/bin
-      # The workspace also holds melange-out/ (the destdir) and the downloaded
-      # tarball, so copy the distribution entries one by one.
-      for f in *; do
-        case "$f" in melange-out|*.tar.gz) continue ;; esac
-        cp -a "$f" ${{targets.destdir}}/opt/keycloak/
-      done
+      tar -xzf "$dist" -C ${{targets.destdir}}/opt/keycloak --strip-components=1
       # Windows launchers are not needed in a Linux image.
       rm -f ${{targets.destdir}}/opt/keycloak/bin/*.bat
       mkdir -p ${{targets.destdir}}/opt/keycloak/data

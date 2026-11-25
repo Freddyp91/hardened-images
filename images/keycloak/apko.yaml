@@ -3,7 +3,9 @@
 contents:
   keyring:
     - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
-    - /work/melange.rsa.pub
+    # One ephemeral signing key per architecture's package build.
+    - /work/melange-x86_64.rsa.pub
+    - /work/melange-aarch64.rsa.pub
   repositories:
     - https://packages.wolfi.dev/os
     - '@local /work/packages'
