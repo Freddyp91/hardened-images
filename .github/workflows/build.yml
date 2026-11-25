@@ -91,16 +91,19 @@ jobs:
         working-directory: images/${{ matrix.image }}
         run: |
           docker run --rm -v "$PWD":/work -w /work "$MELANGE_IMAGE" keygen melange.rsa
-          docker run --rm --privileged -v "$PWD":/work -w /work "$MELANGE_IMAGE" \
-            build melange.yaml --arch x86_64,aarch64 \
+          # Sources come from the fetch step; keep the image dir out of the workspace.
+          mkdir -p /tmp/melange-src
+          docker run --rm --privileged -v "$PWD":/work -v /tmp/melange-src:/src -w /work "$MELANGE_IMAGE" \
+            build melange.yaml --arch x86_64,aarch64 --source-dir /src \
             --signing-key melange.rsa --out-dir packages
           sudo chown -R "$(id -u):$(id -g)" .
 
       - name: Test package with melange
         working-directory: images/${{ matrix.image }}
         run: |
-          docker run --rm --privileged -v "$PWD":/work -w /work "$MELANGE_IMAGE" \
-            test melange.yaml --arch x86_64 \
+          mkdir -p /tmp/melange-src
+          docker run --rm --privileged -v "$PWD":/work -v /tmp/melange-src:/src -w /work "$MELANGE_IMAGE" \
+            test melange.yaml --arch x86_64 --source-dir /src \
             --repository-append /work/packages --keyring-append /work/melange.rsa.pub
           sudo chown -R "$(id -u):$(id -g)" .
 
