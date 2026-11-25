@@ -1,0 +1,191 @@
+name: Build images
+
+on:
+  push:
+    branches: [main]
+    paths: ['images/**', '.github/workflows/build.yml']
+  schedule:
+    # Rebuild every 6 hours to pick up patched Wolfi packages (glibc, openjdk, ...).
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      images:
+        description: 'Space separated image names to build (blank = all)'
+        required: false
+        default: ''
+
+concurrency:
+  group: build-images
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  MELANGE_IMAGE: cgr.dev/chainguard/melange:latest
+  APKO_IMAGE: cgr.dev/chainguard/apko:latest
+  TRIVY_IMAGE: aquasec/trivy:latest
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.list.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: list
+        env:
+          REQUESTED: ${{ github.event.inputs.images }}
+        run: |
+          names=()
+          for dir in images/*/; do
+            name=$(basename "$dir")
+            if [ -n "$REQUESTED" ] && ! grep -qw "$name" <<<"$REQUESTED"; then continue; fi
+            version=$(awk '/^  version:/ {print $2; exit}' "$dir/melange.yaml")
+            if [ "$version" = "0.0.0" ]; then
+              echo "::notice::Skipping $name: version not pinned yet. Run the 'Watch upstream' workflow."
+              continue
+            fi
+            names+=("$name")
+          done
+          echo "matrix=$(printf '%s\n' "${names[@]}" | jq -R . | jq -cs 'map(select(length>0))')" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.matrix != '[]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write       # keyless cosign signing + provenance
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJson(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+
+      - name: Resolve names
+        id: names
+        run: |
+          owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')
+          repo=$(echo '${{ github.event.repository.name }}' | tr '[:upper:]' '[:lower:]')
+          version=$(awk '/^  version:/ {print $2; exit}' images/${{ matrix.image }}/melange.yaml)
+          epoch=$(awk '/^  epoch:/ {print $2; exit}' images/${{ matrix.image }}/melange.yaml)
+          echo "repo=ghcr.io/$owner/$repo/${{ matrix.image }}" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "epoch=$epoch" >> "$GITHUB_OUTPUT"
+          echo "stamp=$(date -u +%Y%m%d%H%M)" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        run: echo '${{ secrets.GITHUB_TOKEN }}' | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
+
+      - name: Build package with melange
+        working-directory: images/${{ matrix.image }}
+        run: |
+          docker run --rm -v "$PWD":/work -w /work "$MELANGE_IMAGE" keygen melange.rsa
+          docker run --rm --privileged -v "$PWD":/work -w /work "$MELANGE_IMAGE" \
+            build melange.yaml --arch x86_64,aarch64 \
+            --signing-key melange.rsa --out-dir packages
+          sudo chown -R "$(id -u):$(id -g)" .
+
+      - name: Build and publish image with apko
+        id: apko
+        working-directory: images/${{ matrix.image }}
+        run: |
+          repo='${{ steps.names.outputs.repo }}'
+          version='${{ steps.names.outputs.version }}'
+          mkdir -p sbom
+          digest_ref=$(docker run --rm \
+            -v "$PWD":/work -w /work \
+            -v "$HOME/.docker":/root/.docker:ro -e DOCKER_CONFIG=/root/.docker \
+            "$APKO_IMAGE" publish apko.yaml \
+              "$repo:$version" "$repo:$version-${{ steps.names.outputs.stamp }}" "$repo:latest" \
+              --sbom-path sbom | tail -n1)
+          echo "Published $digest_ref"
+          echo "ref=$digest_ref" >> "$GITHUB_OUTPUT"
+          echo "digest=${digest_ref##*@}" >> "$GITHUB_OUTPUT"
+          sudo chown -R "$(id -u):$(id -g)" .
+
+      - uses: sigstore/cosign-installer@v3
+
+      - name: Sign image and attach SBOM attestation
+        working-directory: images/${{ matrix.image }}
+        run: |
+          ref='${{ steps.apko.outputs.ref }}'
+          cosign sign --yes "$ref"
+          sbom=$(ls sbom/*.spdx.json | grep -v index | head -n1)
+          cosign attest --yes --type spdxjson --predicate "$sbom" "$ref"
+
+      - name: Generate build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ steps.names.outputs.repo }}
+          subject-digest: ${{ steps.apko.outputs.digest }}
+          push-to-registry: true
+
+      - name: Scan with Trivy
+        env:
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p scan
+          upstream_image=$(jq -r '.upstream.image' images/${{ matrix.image }}/image.json)
+          upstream_tag=$(jq -r '.upstream.imageTagTemplate' images/${{ matrix.image }}/image.json | sed "s/{version}/${{ steps.names.outputs.version }}/g")
+          echo "UPSTREAM_REF=$upstream_image:$upstream_tag" >> "$GITHUB_ENV"
+          docker run --rm -v "$PWD/scan":/scan -e TRIVY_USERNAME -e TRIVY_PASSWORD "$TRIVY_IMAGE" \
+            image --quiet --format json --list-all-pkgs --output /scan/ours.json '${{ steps.apko.outputs.ref }}'
+          # Upstream comparison is best effort: the tag may not exist yet.
+          docker run --rm -v "$PWD/scan":/scan "$TRIVY_IMAGE" \
+            image --quiet --format json --output /scan/upstream.json "$upstream_image:$upstream_tag" || echo "::warning::Upstream scan failed"
+
+      - name: Summarize scan
+        run: |
+          node scripts/summarize-scan.mjs \
+            --name '${{ matrix.image }}' \
+            --version '${{ steps.names.outputs.version }}' \
+            --image '${{ steps.names.outputs.repo }}' \
+            --digest '${{ steps.apko.outputs.digest }}' \
+            --ours scan/ours.json \
+            --upstream scan/upstream.json \
+            --upstream-image "$UPSTREAM_REF" \
+            --out scan/summary-${{ matrix.image }}.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: summary-${{ matrix.image }}
+          path: scan/summary-${{ matrix.image }}.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom-${{ matrix.image }}
+          path: images/${{ matrix.image }}/sbom/
+
+  record:
+    needs: build
+    if: always() && needs.build.result != 'skipped'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: summary-*
+          path: summaries
+          merge-multiple: true
+      - name: Commit scan results
+        run: |
+          shopt -s nullglob
+          files=(summaries/*.json)
+          [ ${#files[@]} -eq 0 ] && { echo "No summaries"; exit 0; }
+          node scripts/merge-results.mjs "${files[@]}"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data/images
+          git diff --cached --quiet && exit 0
+          git commit -m "data: record build results [skip ci]"
+          for i in 1 2 3; do git pull --rebase && git push && break; sleep 5; done

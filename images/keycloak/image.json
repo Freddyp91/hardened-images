@@ -1,0 +1,12 @@
+{
+  "name": "keycloak",
+  "title": "Keycloak",
+  "description": "Open source identity and access management, rebuilt on a minimal Wolfi base.",
+  "upstream": {
+    "github": "keycloak/keycloak",
+    "image": "quay.io/keycloak/keycloak",
+    "imageTagTemplate": "{version}",
+    "tarballTemplate": "https://github.com/keycloak/keycloak/releases/download/{version}/keycloak-{version}.tar.gz"
+  },
+  "usage": "docker run -p 8080:8080 -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=change-me {image} start-dev"
+}

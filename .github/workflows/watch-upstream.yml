@@ -1,0 +1,36 @@
+name: Watch upstream
+
+on:
+  schedule:
+    - cron: '7 * * * *'   # hourly
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - id: check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/check-upstream.mjs
+      - name: Commit version bumps and trigger builds
+        if: steps.check.outputs.updated != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPDATED: ${{ steps.check.outputs.updated }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add images
+          git commit -m "images: bump upstream versions ($UPDATED)"
+          git push
+          # Pushes made with GITHUB_TOKEN don't fire push workflows, so dispatch the build.
+          gh workflow run build.yml --ref main -f images="$UPDATED"

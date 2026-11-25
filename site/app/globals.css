@@ -1,0 +1,32 @@
+:root { --bg: #0d1117; --panel: #161b22; --line: #30363d; --text: #e6edf3; --muted: #8b949e; --accent: #4ade80; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.55 system-ui, -apple-system, Segoe UI, sans-serif; }
+a { color: var(--accent); }
+main { max-width: 1040px; margin: 0 auto; padding: 24px; }
+.top { display: flex; gap: 16px; align-items: baseline; padding: 16px 24px; border-bottom: 1px solid var(--line); }
+.brand { font-weight: 700; font-size: 18px; color: var(--text); text-decoration: none; }
+.tag, .muted { color: var(--muted); }
+.small { font-size: 13px; margin-top: 8px; }
+.hero h1 { font-size: 32px; margin: 16px 0 8px; }
+.hero p { color: var(--muted); max-width: 720px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; margin-top: 24px; }
+.card { display: block; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; color: var(--text); text-decoration: none; }
+.card:hover { border-color: var(--accent); }
+.card h2 { margin: 0; font-size: 20px; }
+.card-head { display: flex; justify-content: space-between; align-items: center; }
+.version { font: 13px ui-monospace, monospace; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 2px 6px; }
+.compare { display: flex; gap: 32px; margin: 12px 0; }
+.big { font-size: 28px; font-weight: 700; color: var(--accent); }
+.big.dim { color: #f87171; }
+.badges { display: inline-flex; gap: 6px; }
+.badge { font: 12px ui-monospace, monospace; padding: 2px 6px; border-radius: 5px; }
+.badge.zero { opacity: 0.35; }
+.crit { background: #7f1d1d; } .high { background: #9a3412; } .med { background: #854d0e; } .low { background: #1e3a8a; }
+.code { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; overflow-x: auto; font: 13px/1.5 ui-monospace, monospace; }
+table { width: 100%; border-collapse: collapse; margin: 8px 0 16px; font-size: 14px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+th { color: var(--muted); font-weight: 600; }
+.mono { font-family: ui-monospace, monospace; }
+details summary { cursor: pointer; margin: 8px 0; }
+.empty { color: var(--muted); padding: 40px 0; }
+footer { max-width: 1040px; margin: 40px auto; padding: 0 24px; color: var(--muted); font-size: 13px; }

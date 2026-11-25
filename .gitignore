@@ -1,0 +1,8 @@
+node_modules/
+site/.next/
+site/out/
+images/*/packages/
+images/*/sbom/
+images/*/melange.rsa
+images/*/melange.rsa.pub
+scan/

@@ -1,0 +1,50 @@
+# Keycloak packaged from the official upstream release tarball.
+# version and expected-sha256 are maintained by scripts/check-upstream.mjs
+# (the "Watch upstream" workflow). Bump epoch to force a package rebuild.
+package:
+  name: keycloak
+  version: 0.0.0
+  epoch: 0
+  description: Open Source Identity and Access Management
+  copyright:
+    - license: Apache-2.0
+  dependencies:
+    runtime:
+      - bash
+      - openjdk-21-jre
+      - openjdk-21-default-jvm
+
+environment:
+  contents:
+    keyring:
+      - https://packages.wolfi.dev/os/wolfi-signing.rsa.pub
+    repositories:
+      - https://packages.wolfi.dev/os
+    packages:
+      - busybox
+      - ca-certificates-bundle
+
+pipeline:
+  - uses: fetch
+    with:
+      uri: https://github.com/keycloak/keycloak/releases/download/${{package.version}}/keycloak-${{package.version}}.tar.gz
+      expected-sha256: 0000000000000000000000000000000000000000000000000000000000000000
+      strip-components: 1
+
+  - runs: |
+      mkdir -p ${{targets.destdir}}/opt/keycloak ${{targets.destdir}}/usr/bin
+      cp -a . ${{targets.destdir}}/opt/keycloak/
+      # Windows launchers are not needed in a Linux image.
+      rm -f ${{targets.destdir}}/opt/keycloak/bin/*.bat
+      mkdir -p ${{targets.destdir}}/opt/keycloak/data
+      ln -s /opt/keycloak/bin/kc.sh ${{targets.destdir}}/usr/bin/kc.sh
+
+test:
+  environment:
+    contents:
+      packages:
+        - busybox
+  pipeline:
+    - runs: |
+        test -x /opt/keycloak/bin/kc.sh
+        test -f /opt/keycloak/version.txt
