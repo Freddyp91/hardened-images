@@ -91,11 +91,14 @@ jobs:
         working-directory: images/${{ matrix.image }}
         run: |
           docker run --rm -v "$PWD":/work -w /work "$MELANGE_IMAGE" keygen melange.rsa
-          # Sources come from the fetch step; keep the image dir out of the workspace.
-          mkdir -p /tmp/melange-src
-          docker run --rm --privileged -v "$PWD":/work -v /tmp/melange-src:/src -w /work "$MELANGE_IMAGE" \
-            build melange.yaml --arch x86_64,aarch64 --source-dir /src \
-            --signing-key melange.rsa --out-dir packages
+          # Sources come from the fetch step, so each arch gets its own empty source dir.
+          # Arches build one at a time: parallel builds race on temp files in the source dir.
+          for arch in x86_64 aarch64; do
+            mkdir -p "/tmp/melange-src-$arch"
+            docker run --rm --privileged -v "$PWD":/work -v "/tmp/melange-src-$arch":/src -w /work "$MELANGE_IMAGE" \
+              build melange.yaml --arch "$arch" --source-dir /src \
+              --signing-key melange.rsa --out-dir packages
+          done
           sudo chown -R "$(id -u):$(id -g)" .
 
       - name: Test package with melange
