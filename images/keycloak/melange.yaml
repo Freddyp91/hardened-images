@@ -21,8 +21,7 @@ vars:
   # should be dropped once upstream ships the fix.
   #
   # Extra -D flags for versions Keycloak exposes as Maven properties.
-  maven-overrides: >-
-    -Dmariadb-jdbc.version=3.5.11
+  maven-overrides: ""
   # Managed dependencies inserted at the top of the root pom's dependencyManagement,
   # so they win over the Quarkus BOM.
   managed-dependency-overrides: |
@@ -31,6 +30,18 @@ vars:
       <groupId>com.google.guava</groupId>
       <artifactId>guava</artifactId>
       <version>33.7.2-jre</version>
+    </dependency>
+    <dependency>
+      <groupId>org.mariadb.jdbc</groupId>
+      <artifactId>mariadb-java-client</artifactId>
+      <version>3.5.11</version>
+    </dependency>
+    <dependency>
+      <groupId>io.opentelemetry</groupId>
+      <artifactId>opentelemetry-bom-alpha</artifactId>
+      <version>1.67.0-alpha</version>
+      <type>pom</type>
+      <scope>import</scope>
     </dependency>
     <dependency>
       <groupId>io.opentelemetry</groupId>
@@ -145,6 +156,8 @@ test:
         ls | grep -q 'com.google.guava.guava-33.7.2-jre.jar'
         ls | grep -q 'org.mariadb.jdbc.mariadb-java-client-3.5.11.jar'
         ls | grep -q 'io.opentelemetry.opentelemetry-api-1.67.0.jar'
+        # Keep the OpenTelemetry family on one release.
+        ! ls | grep -E '^io\.opentelemetry\.opentelemetry-' | grep -v -- '-1\.67\.0' 
     - name: kc.sh runs
       runs: |
         /opt/keycloak/bin/kc.sh --version | tee /tmp/kc-version
