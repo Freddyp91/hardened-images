@@ -1,0 +1,126 @@
+{
+  "name": "keycloak",
+  "title": "Keycloak",
+  "description": "Open source identity and access management, rebuilt on a minimal Wolfi base.",
+  "image": "ghcr.io/freddyp91/hardened-images/keycloak",
+  "usage": "docker run -p 8080:8080 -e KC_BOOTSTRAP_ADMIN_USERNAME=admin -e KC_BOOTSTRAP_ADMIN_PASSWORD=change-me {image} start-dev",
+  "upstream": {
+    "github": "keycloak/keycloak",
+    "image": "quay.io/keycloak/keycloak:26.8.2"
+  },
+  "latest": {
+    "builtAt": "2026-11-25T02:57:18.066Z",
+    "version": "26.8.2",
+    "digest": "sha256:bdc712a378bce3d1dc38838233031777889ee740a5f248262582f82d3737cb17",
+    "vulns": {
+      "critical": 0,
+      "high": 1,
+      "medium": 4,
+      "low": 1,
+      "unknown": 0,
+      "total": 6,
+      "fixable": 6,
+      "os": 0,
+      "libraries": 6
+    },
+    "upstreamVulns": {
+      "critical": 0,
+      "high": 6,
+      "medium": 30,
+      "low": 33,
+      "unknown": 0,
+      "total": 69,
+      "fixable": 6,
+      "os": 63,
+      "libraries": 6
+    },
+    "runUrl": "https://github.com/Freddyp91/hardened-images/actions/runs/45535572770",
+    "topVulns": [
+      {
+        "id": "CVE-2026-102554",
+        "pkg": "com.google.guava:guava",
+        "installed": "33.6.0-jre",
+        "fixed": "33.7.2",
+        "severity": "HIGH",
+        "title": "com.google.guava/guava: Google Guava: Denial of Service via unthrottled memory allocation during deserialization",
+        "kind": "library"
+      },
+      {
+        "id": "CVE-2026-118259",
+        "pkg": "io.opentelemetry:opentelemetry-api",
+        "installed": "1.62.0",
+        "fixed": "1.67.0",
+        "severity": "MEDIUM",
+        "title": "opentelemetry-java: Quadratic CPU consumption in W3C tracestate parsing",
+        "kind": "library"
+      },
+      {
+        "id": "CVE-2026-119210",
+        "pkg": "org.mariadb.jdbc:mariadb-java-client",
+        "installed": "3.5.10",
+        "fixed": "3.3.7, 3.4.5, 3.5.11",
+        "severity": "MEDIUM",
+        "title": "org.mariadb.jdbc/mariadb-java-client: MariaDB Connector/J: Information disclosure via bypass of local file validation",
+        "kind": "library"
+      },
+      {
+        "id": "CVE-2026-119276",
+        "pkg": "org.mariadb.jdbc:mariadb-java-client",
+        "installed": "3.5.10",
+        "fixed": "3.3.7, 3.4.5, 3.5.11",
+        "severity": "MEDIUM",
+        "title": "org.mariadb.jdbc/mariadb-java-client: mariadb-java-client: Denial of Service via uncontrolled memory allocation",
+        "kind": "library"
+      },
+      {
+        "id": "CVE-2026-119281",
+        "pkg": "org.mariadb.jdbc:mariadb-java-client",
+        "installed": "3.5.10",
+        "fixed": "3.3.7, 3.4.5, 3.5.11",
+        "severity": "MEDIUM",
+        "title": "org.mariadb.jdbc/mariadb-java-client: mariadb-connector-j: Security feature bypass via unvalidated character set changes",
+        "kind": "library"
+      },
+      {
+        "id": "CVE-2026-119280",
+        "pkg": "org.mariadb.jdbc:mariadb-java-client",
+        "installed": "3.5.10",
+        "fixed": "3.3.7, 3.4.5, 3.5.11",
+        "severity": "LOW",
+        "title": "org.mariadb.jdbc/mariadb-java-client: MariaDB Connector/J: Denial of Service via unvalidated lengths during XA recovery",
+        "kind": "library"
+      }
+    ],
+    "packageCount": 544
+  },
+  "history": [
+    {
+      "builtAt": "2026-11-25T02:57:18.066Z",
+      "version": "26.8.2",
+      "digest": "sha256:bdc712a378bce3d1dc38838233031777889ee740a5f248262582f82d3737cb17",
+      "vulns": {
+        "critical": 0,
+        "high": 1,
+        "medium": 4,
+        "low": 1,
+        "unknown": 0,
+        "total": 6,
+        "fixable": 6,
+        "os": 0,
+        "libraries": 6
+      },
+      "upstreamVulns": {
+        "critical": 0,
+        "high": 6,
+        "medium": 30,
+        "low": 33,
+        "unknown": 0,
+        "total": 69,
+        "fixable": 6,
+        "os": 63,
+        "libraries": 6
+      },
+      "runUrl": "https://github.com/Freddyp91/hardened-images/actions/runs/45535572770"
+    }
+  ]
+}
